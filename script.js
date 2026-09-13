@@ -1,25 +1,133 @@
 document.addEventListener('DOMContentLoaded',()=>{
+  const normalizePhone=value=>(value||'').toString().replace(/\D/g,'').replace(/^1(?=\d{10}$)/,'');
+
+  function plausibleUSPhone(value){
+    const d=normalizePhone(value);
+    if(d.length!==10) return false;
+    // NANP: area code and exchange cannot begin with 0 or 1.
+    if(!/[2-9]/.test(d[0]) || !/[2-9]/.test(d[3])) return false;
+    // Obvious junk / repeated or simple sequences.
+    if(/^(\d)\1{9}$/.test(d)) return false;
+    if(['1234567890','0123456789','9876543210','0987654321'].includes(d)) return false;
+    // 555-0100 through 555-0199 are reserved for fictional use.
+    if(d.slice(3,6)==='555' && /^01\d\d$/.test(d.slice(6))) return false;
+    return true;
+  }
+
+  function plausibleStreetAddress(value){
+    const a=(value||'').toString().trim();
+    if(a.length<6 || a.length>120) return false;
+    if(/^p\.?\s*o\.?\s*box\b/i.test(a)) return false;
+    return /\d/.test(a) && /[A-Za-z]{3}/.test(a);
+  }
+
+  async function verifyUSZip(zip){
+    if(!/^\d{5}$/.test(zip)) return null;
+    const controller=new AbortController();
+    const timer=setTimeout(()=>controller.abort(),4500);
+    try{
+      const r=await fetch(`https://api.zippopotam.us/us/${encodeURIComponent(zip)}`,{signal:controller.signal});
+      if(!r.ok) return null;
+      const data=await r.json();
+      const place=data?.places?.[0];
+      if(!place) return null;
+      return {city:place['place name']||'',state:place['state abbreviation']||place.state||''};
+    }catch(_){
+      return null;
+    }finally{
+      clearTimeout(timer);
+    }
+  }
+
   document.querySelectorAll('.lead-form').forEach(form=>{
+    const loadedAt=Date.now();
+    form.dataset.formLoaded=String(loadedAt);
+
     form.addEventListener('submit',async e=>{
       e.preventDefault();
+
       const button=form.querySelector('button[type="submit"]');
       const original=button.textContent;
-      button.disabled=true;
-      button.textContent='SENDING...';
       let status=form.querySelector('.form-status');
-      if(!status){status=document.createElement('p');status.className='form-status notice';button.closest('p').after(status);}
+      if(!status){
+        status=document.createElement('p');
+        status.className='form-status notice';
+        button.closest('p').after(status);
+      }
       status.textContent='';
+
       const fd=new FormData(form);
+      const honey=(fd.get('_honey')||'').toString().trim();
+      const elapsed=Date.now()-Number(form.dataset.formLoaded||loadedAt);
+      const lastSubmit=Number(localStorage.getItem('fcn_last_submit')||0);
+
+      // LoJack layer 1: honeypot. Humans never see or fill this field.
+      if(honey){
+        status.textContent='Request received.';
+        form.reset();
+        return;
+      }
+
+      // LoJack layer 2: reject machine-speed submissions.
+      if(elapsed < 1800){
+        status.textContent='Please wait a moment and try again.';
+        return;
+      }
+
+      // LoJack layer 3: browser-side burst limiter.
+      if(lastSubmit && Date.now()-lastSubmit < 30000){
+        status.textContent='Your request was already sent. Please wait before submitting again.';
+        return;
+      }
+
+      const phone=(fd.get('phone')||'').toString();
+      const address=(fd.get('address')||'').toString().trim();
+      const zip=(fd.get('zip')||'').toString().trim();
+
+      // Lead-quality gate: reject implausible US phone numbers before sending.
+      if(!plausibleUSPhone(phone)){
+        status.textContent='Please enter a valid 10-digit U.S. mobile number.';
+        form.querySelector('[name="phone"]')?.focus();
+        return;
+      }
+
+      // Require a usable service-location format. This is a plausibility check, not postal-address ownership verification.
+      if(!plausibleStreetAddress(address)){
+        status.textContent='Please enter a valid service street address.';
+        form.querySelector('[name="address"]')?.focus();
+        return;
+      }
+
+      button.disabled=true;
+      button.textContent='VERIFYING...';
+
+      // Verify that the ZIP exists before the lead can be submitted.
+      const zipInfo=await verifyUSZip(zip);
+      if(!zipInfo){
+        status.textContent='We could not verify that ZIP code. Please check it and try again.';
+        button.disabled=false;
+        button.textContent=original;
+        form.querySelector('[name="zip"]')?.focus();
+        return;
+      }
+
+      button.textContent='SENDING...';
+
       const payload={
         name:fd.get('name'),
-        phone:fd.get('phone'),
-        zip:fd.get('zip'),
+        phone:normalizePhone(phone),
+        service_address:address,
+        zip,
+        city:zipInfo.city,
+        state:zipInfo.state,
         problem:fd.get('problem'),
         preferred_contact:fd.get('contact'),
-        _subject:`NEW FurnaceCheckNow Lead - ${fd.get('zip')||''}`,
+        _honey:'',
+        _subject:`NEW FurnaceCheckNow Lead - ${zip} - ${zipInfo.city}`,
         _template:'table',
         _url:window.location.href
       };
+
       try{
         const response=await fetch('https://formsubmit.co/ajax/intake@furnacechecknow.com',{
           method:'POST',
@@ -27,8 +135,10 @@ document.addEventListener('DOMContentLoaded',()=>{
           body:JSON.stringify(payload)
         });
         if(!response.ok) throw new Error('submit failed');
+        localStorage.setItem('fcn_last_submit',String(Date.now()));
         status.textContent='Request received. We’ll follow up about your furnace request.';
         form.reset();
+        form.dataset.formLoaded=String(Date.now());
         button.textContent='REQUEST RECEIVED ✓';
         setTimeout(()=>{button.disabled=false;button.textContent=original;},4000);
       }catch(err){
