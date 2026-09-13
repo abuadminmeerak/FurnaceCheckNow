@@ -14,12 +14,6 @@ document.addEventListener('DOMContentLoaded',()=>{
     return true;
   }
 
-  function plausibleStreetAddress(value){
-    const a=(value||'').toString().trim();
-    if(a.length<6 || a.length>120) return false;
-    if(/^p\.?\s*o\.?\s*box\b/i.test(a)) return false;
-    return /\d/.test(a) && /[A-Za-z]{3}/.test(a);
-  }
 
   async function verifyUSZip(zip){
     if(!/^\d{5}$/.test(zip)) return null;
@@ -81,7 +75,6 @@ document.addEventListener('DOMContentLoaded',()=>{
       }
 
       const phone=(fd.get('phone')||'').toString();
-      const address=(fd.get('address')||'').toString().trim();
       const zip=(fd.get('zip')||'').toString().trim();
 
       // Lead-quality gate: reject implausible US phone numbers before sending.
@@ -91,12 +84,6 @@ document.addEventListener('DOMContentLoaded',()=>{
         return;
       }
 
-      // Require a usable service-location format. This is a plausibility check, not postal-address ownership verification.
-      if(!plausibleStreetAddress(address)){
-        status.textContent='Please enter a valid service street address.';
-        form.querySelector('[name="address"]')?.focus();
-        return;
-      }
 
       button.disabled=true;
       button.textContent='VERIFYING...';
@@ -116,12 +103,13 @@ document.addEventListener('DOMContentLoaded',()=>{
       const payload={
         name:fd.get('name'),
         phone:normalizePhone(phone),
-        service_address:address,
+        email:(fd.get('email')||'').toString().trim(),
         zip,
         city:zipInfo.city,
         state:zipInfo.state,
         problem:fd.get('problem'),
         preferred_contact:fd.get('contact'),
+        marketing_consent:fd.get('marketing_consent')==='yes' ? 'yes' : 'no',
         _honey:'',
         _subject:`NEW FurnaceCheckNow Lead - ${zip} - ${zipInfo.city}`,
         _template:'table',
