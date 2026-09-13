@@ -6,3 +6,6 @@
 .brand{display:flex;align-items:center;text-decoration:none}
 .site-logo{display:block;width:auto;height:64px;max-width:min(430px,48vw);object-fit:contain}
 @media(max-width:760px){.site-logo{height:48px;max-width:72vw}}
+/* Header logo fit correction */
+.site-logo{height:58px;width:auto;max-width:360px;object-fit:contain;object-position:left center}
+@media(max-width:760px){.site-logo{height:52px;max-width:min(360px,88vw)}}
