@@ -9,3 +9,7 @@
 /* Header logo fit correction */
 .site-logo{height:58px;width:auto;max-width:360px;object-fit:contain;object-position:left center}
 @media(max-width:760px){.site-logo{height:52px;max-width:min(360px,88vw)}}
+
+/* Header logo v2: full uncropped source asset */
+.site-logo{height:58px;width:auto;max-width:390px;object-fit:contain;object-position:left center}
+@media(max-width:760px){.site-logo{height:52px;max-width:min(390px,88vw)}}
